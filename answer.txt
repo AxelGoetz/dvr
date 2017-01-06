@@ -1,0 +1,21 @@
+Question 1:
+  - Test 3:
+      - downlink 10 3.1 4.0
+        When we send a packet from 0 to 4, we can clearly see the bouncing effect between
+        router 1 and 2 because packets are continuously sent back and forth in the link 1.1 2.1.
+        This happens until the routing protocol converges.
+      - downlink 35 0.0 3.0
+        This happens without any convergence/counting to infinity issues.
+      - downlink 45 2.2 5.0
+        Now the network is split into 2 different subnetworks ({0, 1, 2} and {3, 4, 5, 6}).
+        So essentially, the protocol will keep looping until it reaches an infinity value.
+        Only then it converges. This effect can clearly be seen when the test tries to send a packet
+        from router 0 to router 5 at time 50. The packet is sent back and forth on the link 1.1 2.1.
+  - Test 4:
+    - downlink 15 2.2 5.0
+      This happens without any convergence/counting to infinity issues.
+    - downlink 30 0.0 3.0
+      Again, the network is split into 2 subnetworks ({0, 1, 2} and {3, 4, 5, 6, 7}).
+      So the protocol will loop until the metric reaches an infinity value. This can clearly be seen
+      when we send a packet from router 7 to router 2 at time 40 because the packet is sent back and forth
+      on link 5.2 6.2.
