@@ -13,6 +13,9 @@ public class DV implements RoutingAlgorithm {
     private boolean allowPReverse;
     private boolean allowExpire;
 
+    private int timeout;
+    private int garbageCollection;
+
     private Vector<DVRoutingTableEntry> routingTable;
 
     public DV() {
@@ -25,6 +28,8 @@ public class DV implements RoutingAlgorithm {
 
     public void setUpdateInterval(int u) {
         this.updateInterval = u;
+        this.timeout = 4 * u;
+        this.garbageCollection = 3 * u;
     }
 
     public void setAllowPReverse(boolean flag) {
@@ -74,6 +79,9 @@ public class DV implements RoutingAlgorithm {
         for(DVRoutingTableEntry entry: routingTable) {
             if(entry.getInterface() == iface) {
                 entry.setMetric(INFINITY);
+
+                // Since the entry is updated, restart the garbage collection timer
+                // entry.setTime(router.getCurrentTime());
             }
         }
     }
@@ -85,7 +93,23 @@ public class DV implements RoutingAlgorithm {
             }
         }
 
-        // TODO: Expire
+        if(allowExpire) {
+            int time = router.getCurrentTime();
+
+            for(int i = 0; i < routingTable.size(); i++) {
+                DVRoutingTableEntry entry = routingTable.get(i);
+                if(entry.getInterface() == LOCAL) continue;
+
+                int diff = time - entry.getTime();
+
+                if(entry.getMetric() == INFINITY && diff > garbageCollection) {
+                    routingTable.remove(i);
+                    i -= 1;
+                } /*else if(diff > timeout) {
+                    entry.setMetric(INFINITY);
+                }*/
+            }
+        }
     }
 
     /**
@@ -95,10 +119,14 @@ public class DV implements RoutingAlgorithm {
     private Payload getPayLoadRoutingPacket(int iface) {
         Payload payload = new Payload();
         for(DVRoutingTableEntry entry: routingTable) {
+            // If preverse is turned on, you cannot announce the route where the destination is in on the interface used as the next hop
+            // towards that destination. So we set the metric to infinity (poison reverse)
+            // It doesn't matter if you use `entry.getTime()` or `router.getCurrentTime()` because when a router received a packet,
+            // it will modify the time anyway.
             if(allowPReverse && getNextHop(entry.getDestination()) == iface) {
-              payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), INFINITY, router.getCurrentTime()));
+              payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), INFINITY, entry.getTime()));
             } else {
-              payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), entry.getMetric(), router.getCurrentTime()));
+              payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), entry.getMetric(), entry.getTime()));
             }
         }
         return payload;
@@ -125,15 +153,18 @@ public class DV implements RoutingAlgorithm {
      * Given a new entry, this method adds it to the routingTable.
      */
     private void addEntryToTable(DVRoutingTableEntry entry) {
-        // TODO: Check timeout
         DVRoutingTableEntry currEntry = lookup(entry.getDestination());
 
         // Entry doesn't exist yet, so we add it
         if(currEntry == null) {
+            // Don't add a new entry with metric infinity
+            if(allowExpire && entry.getMetric() == INFINITY) return;
             entry.setTime(router.getCurrentTime());
             routingTable.add(entry);
         } // Entries have the same interface so we update no matter what value it is
         else if(entry.getInterface() == currEntry.getInterface()) {
+            // If the current entry was already infinity, we don't want to update the time
+            if(allowExpire && currEntry.getMetric() == INFINITY && entry.getMetric() == INFINITY) return;
             currEntry.setTime(router.getCurrentTime());
             currEntry.setMetric(entry.getMetric());
         } // Finally, if the metric is better, update
