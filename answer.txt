@@ -4,18 +4,55 @@ Question 1:
         When we send a packet from 0 to 4, we can clearly see the bouncing effect between
         router 1 and 2 because packets are continuously sent back and forth in the link 1.1 2.1.
         This happens until the routing protocol converges.
+
       - downlink 35 0.0 3.0
         This happens without any convergence/counting to infinity issues.
+
       - downlink 45 2.2 5.0
         Now the network is split into 2 different subnetworks ({0, 1, 2} and {3, 4, 5, 6}).
         So essentially, the protocol will keep looping until it reaches an infinity value.
         Only then it converges. This effect can clearly be seen when the test tries to send a packet
         from router 0 to router 5 at time 50. The packet is sent back and forth on the link 1.1 2.1.
+
   - Test 4:
     - downlink 15 2.2 5.0
       This happens without any convergence/counting to infinity issues.
+
     - downlink 30 0.0 3.0
       Again, the network is split into 2 subnetworks ({0, 1, 2} and {3, 4, 5, 6, 7}).
       So the protocol will loop until the metric reaches an infinity value. This can clearly be seen
       when we send a packet from router 7 to router 2 at time 40 because the packet is sent back and forth
       on link 5.2 6.2.
+
+Question 2:
+  Split Horizon and Poison Reverse helps to speed up the convergence process in several cases (as seen above with for example counting to infinity).
+  It works really well when there are loops with more than 2 routers. If there is a loop with for example 3 routers, it is still possible that they
+  need to count to infinity.
+  - Test 3:
+    - downlink 10 3.1 4.0
+      Now when we send a packet from 0 to 4 at time 12, we can see that the packet gets dropped immediately because there isn't a path at that point in time from router 0 to 4
+      since the protocol hasn't converged yet. So instead of sending the packet back and forth, SH/PR has resolved the issue.
+      The reason why is because if SH/PR is switched off, both router 1 and router 2 receive at the same time that they both can no longer send via router 0 to get to router 4.
+      Additionally, router 2 also received a message that it cannot send through router 5 to get to router 4 with metric 2. So the shortest option for router 2 is through router 1 and the shortest option for router 2 is through router 1.
+      This causes a packet to be sent back and forth between the 2.
+
+      But when SH/PR is switched on, router 0 doesn't advertise to router 3 that it has a path to router 4 via router 3.
+      Therefore router 0 knows at time 12, that there currently isn't a viable path from 0 to 4. So it drops the packet.
+
+    - downlink 35 0.0 3.0
+      There previously weren't any noticeable issues so SH/PR couldn't have resolved any.
+
+    - downlink 45 2.2 5.0
+      Similar to the downlink 10 3.1 4.0, instead of 0 advertising to 2 that there is a route between 0 and 5 via 2, it sets the metric to infinity.
+      Then 2 advertises to routers 0 and 1 that the metric to router 5 is also infinity. Since they both currently send via the same interface that they received this advertisement on,
+      they update their routing tables to contain this information.
+      So now when router 0 tries to send a message to router 5, it realizes it cannot and therefore drops the packet.
+
+  - Test 4:
+    - downlink 15 2.2 5.0
+      There previously weren't any noticeable issues so SH/PR couldn't have resolved any.
+
+    - downlink 30 0.0 3.0
+      Because SH/PR is turned on, routers 4, 5 and 6 will not advertise a route to router 2 via router 3. So when router 3 advertises that the route to router 2 has metric infinity, they will accept it.
+      However router 7 can for example still advertise to router 4 that is has a route to router 2 via router 6 and it will accept it.
+      Therefore loops can still be created. A similar loop is created and the packet gets dropped once it reached infinity.
