@@ -1,4 +1,6 @@
 import java.lang.Math;
+import java.util.Vector;
+import java.util.Collections;
 
 public class DV implements RoutingAlgorithm {
 
@@ -11,10 +13,10 @@ public class DV implements RoutingAlgorithm {
     private boolean allowPReverse;
     private boolean allowExpire;
 
-    private ArrayList<RoutingTableEntry> routingTable;
+    private Vector<DVRoutingTableEntry> routingTable;
 
     public DV() {
-        routingTable = new ArrayList<RoutingTableEntry>();
+        routingTable = new Vector<DVRoutingTableEntry>();
     }
 
     public void setRouterObject(Router obj) {
@@ -34,37 +36,43 @@ public class DV implements RoutingAlgorithm {
     }
 
     public void initalise() {
-        routingTable.add(new DVRoutingTableEntry(router.getId(), LOCAL, 0, router.getCurrentTime());
+        routingTable.add(new DVRoutingTableEntry(router.getId(), LOCAL, 0, router.getCurrentTime()));
+    }
+
+    /**
+     * Loops through the routing table and returns the DVRoutingTableEntry
+     * that matches the destination id.
+     */
+    private DVRoutingTableEntry lookup(int destination) {
+        for(DVRoutingTableEntry entry: routingTable) {
+            if(entry.getDestination() == destination) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     /**
      * For a given destination address, returns the appriopriate interface
      * to send the message to.
-     * It does this by looping through the routingTable and if it finds an entry whose dest matches,
-     * it returns the interface.
-     * There is no need to check for local interfaces.
      * @return the local interface
      */
     public int getNextHop(int destination) {
-        for(DVRoutingTableEntry entry: routingTable) {
-            if(entry.getDestination() == destination) {
-                if(entry.getMetric() == INFINITY) {
-                    return UNKOWN;
-                }
-                return entry.getInterface();
-            }
+        DVRoutingTableEntry entry = lookup(destination);
+        if(entry == null || entry.getMetric() == INFINITY) {
+            return UNKNOWN;
         }
-        return UNKOWN;
+        return entry.getInterface();
     }
 
     /**
      * If a particular interface fails, this method updates the routing table
      * and sets all values with that interface to infinity.
-     * @param interface the id of the interface
+     * @param iface the id of the interface
      */
-    private void setInterfaceToInfinity(int interface) {
+    private void setInterfaceToInfinity(int iface) {
         for(DVRoutingTableEntry entry: routingTable) {
-            if(entry.getInterface() == interface) {
+            if(entry.getInterface() == iface) {
                 entry.setMetric(INFINITY);
             }
         }
@@ -82,13 +90,13 @@ public class DV implements RoutingAlgorithm {
 
     /**
      * Given an interface, generates the appripriate routing packet payload.
-     * @param  interface
+     * @param iface the id of the interface
      */
-    private Payload getPayLoadRoutingPacket(int interface) {
+    private Payload getPayLoadRoutingPacket(int iface) {
         Payload payload = new Payload();
         for(DVRoutingTableEntry entry: routingTable) {
             // TODO: allowPReverse
-            payload.addEntry(entry);
+            payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), entry.getMetric(), router.getCurrentTime()));
         }
         return payload;
     }
@@ -111,11 +119,46 @@ public class DV implements RoutingAlgorithm {
     }
 
     /**
+     * Given a new entry, this method adds it to the routingTable.
+     */
+    private void addEntryToTable(DVRoutingTableEntry entry) {
+        // TODO: Check timeout
+        DVRoutingTableEntry currEntry = lookup(entry.getDestination());
+
+        // Entry doesn't exist yet, so we add it
+        if(currEntry == null) {
+            entry.setTime(router.getCurrentTime());
+            routingTable.add(entry);
+        } // Entries have the same interface so we update no matter what value it is
+        else if(entry.getInterface() == currEntry.getInterface()) {
+            currEntry.setTime(router.getCurrentTime());
+            currEntry.setMetric(entry.getMetric());
+        } // Finally, if the metric is better, update
+        else if(entry.getMetric() < currEntry.getMetric()) {
+            currEntry.setTime(router.getCurrentTime());
+            currEntry.setMetric(entry.getMetric());
+            currEntry.setInterface(entry.getInterface());
+        }
+    }
+
+    /**
      * Given a routing packet p that came in on interface iface,
      * it processes the packet and updates the routing table.
      */
     public void processRoutingPacket(Packet p, int iface) {
-        // TODO: Fininsh this function
+        Vector<Object> payload=p.getPayload().getData();
+
+        for(Object obj: payload) {
+            DVRoutingTableEntry entry = (DVRoutingTableEntry)obj;
+
+            int metric = router.getInterfaceWeight(iface) + entry.getMetric();
+            if(metric > INFINITY) metric = INFINITY;
+            entry.setMetric(metric);
+            entry.setInterface(iface);
+
+            addEntryToTable(entry);
+        }
+        Collections.sort(routingTable);
     }
 
     /**
@@ -129,15 +172,15 @@ public class DV implements RoutingAlgorithm {
     }
 }
 
-class DVRoutingTableEntry implements RoutingTableEntry {
+class DVRoutingTableEntry implements RoutingTableEntry, Comparable<DVRoutingTableEntry> {
     private int destination;
-    private int interface;
+    private int iface;
     private int metric;
     private int time;
 
     public DVRoutingTableEntry(int d, int i, int m, int t) {
         this.destination = d;
-        this.interface = i;
+        this.iface = i;
         this.metric = m;
         this.time = t;
     }
@@ -146,13 +189,13 @@ class DVRoutingTableEntry implements RoutingTableEntry {
 
     public void setDestination(int d) { this.destination = d; }
 
-    public int getInterface() { return this.interface; }
+    public int getInterface() { return this.iface; }
 
-    public void setInterface(int i) { this.interface = i; }
+    public void setInterface(int i) { this.iface = i; }
 
     public int getMetric() { return this.metric; }
 
-    public void setMetric(int m) {this.metric = m }
+    public void setMetric(int m) {this.metric = m; }
 
     public int getTime() { return this.time; }
 
@@ -160,5 +203,12 @@ class DVRoutingTableEntry implements RoutingTableEntry {
 
     public String toString() {
         return "d " + this.getDestination() + " i " + this.getInterface() + " m " + this.getMetric();
+    }
+
+    /**
+     * To sort the entries
+     */
+    public int compareTo(DVRoutingTableEntry entry){
+        return this.getDestination() - entry.getDestination();
     }
 }
