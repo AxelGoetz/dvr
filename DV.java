@@ -95,8 +95,11 @@ public class DV implements RoutingAlgorithm {
     private Payload getPayLoadRoutingPacket(int iface) {
         Payload payload = new Payload();
         for(DVRoutingTableEntry entry: routingTable) {
-            // TODO: allowPReverse
-            payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), entry.getMetric(), router.getCurrentTime()));
+            if(allowPReverse && getNextHop(entry.getDestination()) == iface) {
+              payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), INFINITY, router.getCurrentTime()));
+            } else {
+              payload.addEntry(new DVRoutingTableEntry(entry.getDestination(), entry.getInterface(), entry.getMetric(), router.getCurrentTime()));
+            }
         }
         return payload;
     }
